@@ -12,13 +12,17 @@ Created on Fri Jan 16 15:51:37 2026
 
 ###############################################################################
 # OBJETIVO DEL PROYECTO: DISEÑAR E IMPLEMENTAR UN ALGORITMO DE MACHINE LEARNING
-# PARA ESTABLECER UN MODELO PREDICTIVO
+# PARA CREAR UN MODELO PREDICTIVO DE LA BRECHA DE PRODUCTIVIDAD CIENTÍFICA DE
+# BECARIOS DE PROGRAMAS DE DOCTORADO
 ###############################################################################
 
 # Se importan las librerías que serán usadas
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from catboost import CatBoostRegressor, Pool
+from sklearn.model_selection import KFold
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 # Se construye una función que aborde la conversión de int en str para un procesamiento óptimizado
@@ -69,21 +73,156 @@ model_becario.pais_subvencion.value_counts(normalize=False)
 model_becario.columns
 model_becario = model_becario[["target_brecha", "area", "pais_subvencion"]]
 
-model_becario.to_excel("jajaja.xlsx")
+# Ahora bien, se procede a implementar el modelo de machine learning
+
+# Se configuran las variables
+target = "target_brecha"
+cat_cols = ["area", "pais_subvencion"]
+
+X = model_becario.drop(columns=[target]).copy()
+y = model_becario[target].copy()
+
+for c in cat_cols:
+    X[c] = X[c].astype(str)
+
+
+# =========================================================
+# Repeated K-Fold CV (Bayesian bootstrap SIN subsample)
+# =========================================================
+k = 5
+n_repeats = 10
+seeds = [42 + i for i in range(n_repeats)]
+
+all_rows = []
+oof_pred_sum = np.zeros(len(X), dtype=float)
+oof_counts = np.zeros(len(X), dtype=int)
+
+for rep, seed in enumerate(seeds, start=1):
+    kf = KFold(n_splits=k, shuffle=True, random_state=seed)
+
+    for fold, (train_idx, test_idx) in enumerate(kf.split(X), start=1):
+        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
+        y_tr, y_te = y.iloc[train_idx], y.iloc[test_idx]
+
+        train_pool = Pool(X_tr, y_tr, cat_features=cat_cols)
+        test_pool  = Pool(X_te, y_te, cat_features=cat_cols)
+
+        model = CatBoostRegressor(
+            loss_function="RMSE",
+            iterations=3000,
+            learning_rate=0.03,
+            depth=6,
+            l2_leaf_reg=5.0,
+            random_seed=seed,
+            eval_metric="RMSE",
+            verbose=False,
+
+            # ====== Bagging interno (Bayesian) ======
+            # IMPORTANTE: Bayesian bootstrap NO soporta 'subsample'
+            bootstrap_type="Bayesian",
+            bagging_temperature=1.0,
+
+            # Early stopping por fold
+            od_type="Iter",
+            od_wait=150
+        )
+
+        model.fit(train_pool, eval_set=test_pool, use_best_model=True)
+
+        preds = model.predict(test_pool)
+        oof_pred_sum[test_idx] += preds
+        oof_counts[test_idx] += 1
+
+        mae = mean_absolute_error(y_te, preds)
+        rmse = mean_squared_error(y_te, preds, squared=False)
+        r2 = r2_score(y_te, preds)
+
+        all_rows.append({
+            "repeat": rep,
+            "seed": seed,
+            "fold": fold,
+            "MAE": mae,
+            "RMSE": rmse,
+            "R2": r2,
+            "best_iter": model.get_best_iteration()
+        })
+
+metrics_df = pd.DataFrame(all_rows)
+
+print("\nResumen global (todos los folds y repeticiones):")
+print(metrics_df[["MAE", "RMSE", "R2", "best_iter"]].agg(["mean", "std", "min", "max"]))
+
+# OOF promedio sobre repeticiones
+oof_pred = oof_pred_sum / np.maximum(oof_counts, 1)
+
+oof_mae = mean_absolute_error(y, oof_pred)
+oof_rmse = mean_squared_error(y, oof_pred, squared=False)
+oof_r2 = r2_score(y, oof_pred)
+
+print("\nOOF Global (promedio sobre repeticiones):")
+print(f"OOF MAE : {oof_mae:.4f}")
+print(f"OOF RMSE: {oof_rmse:.4f}")
+print(f"OOF R^2 : {oof_r2:.4f}")
+
+metrics_df.to_csv("catboost_repeated_kfold_bayesian_metrics.csv", index=False)
+
+
+# =========================================================
+# Modelo final (100% datos) - consistente con lo anterior
+# =========================================================
+full_pool = Pool(X, y, cat_features=cat_cols)
+
+# Heurística: usa el promedio (o mediana) de best_iter observado en CV
+final_iters = int(metrics_df["best_iter"].mean())
+
+final_model = CatBoostRegressor(
+    loss_function="RMSE",
+    iterations=final_iters,
+    learning_rate=0.03,
+    depth=6,
+    l2_leaf_reg=5.0,
+    random_seed=42,
+    eval_metric="RMSE",
+    verbose=200,
+    bootstrap_type="Bayesian",
+    bagging_temperature=1.0
+)
+
+final_model.fit(full_pool)
+final_model.save_model("catboost_brecha_final_bayesian.cbm")
+
+# Importancia de variables
+fi = final_model.get_feature_importance(full_pool)
+imp = pd.DataFrame({"feature": X.columns, "importance": fi}).sort_values("importance", ascending=False)
+print("\nImportancia (modelo final):")
+print(imp)
 
 
 
+# Añadir predicciones OOF al dataframe original
+df_oof = X.copy()
+df_oof["target_real"] = y
+df_oof["oof_pred"] = oof_pred
 
+# Promedio de predicción OOF por país
+oof_by_country = (
+    df_oof
+    .groupby("pais_subvencion")["oof_pred"]
+    .agg(["mean", "count"])
+    .sort_values("mean", ascending=False)
+)
 
+print(oof_by_country)
 
+# Promedio de predicción OOF por área
+oof_by_area = (
+    df_oof
+    .groupby("area")["oof_pred"]
+    .agg(["mean", "count"])
+    .sort_values("mean", ascending=False)
+)
 
-
-
-
-
-
-
-
+print(oof_by_area)
 
 
 
