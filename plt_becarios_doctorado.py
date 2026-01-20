@@ -107,10 +107,13 @@ for rep, seed in enumerate(seeds, start=1):
         train_pool = Pool(X_tr, y_tr, cat_features=cat_cols)
         test_pool  = Pool(X_te, y_te, cat_features=cat_cols)
 
+# Se implementa el modelo, estableciendo sus hiperparámetros en función del número de observaciones y
+# el número y natualeza de las variables o predictoras    
+
         model = CatBoostRegressor(
-            loss_function="RMSE",
-            iterations=3000,
-            learning_rate=0.03,
+            loss_function="RMSE",  # Representa la función de pérdida que se busca minimizar
+            iterations=3000,       # Representa el número de iteraciones o árboles de decisión
+            learning_rate=0.03,    # Es la métrica de referencia de la magnitud o peso de las correciones o iteraciones
             depth=6,
             l2_leaf_reg=5.0,
             random_seed=seed,
