@@ -23,7 +23,7 @@ import numpy as np
 from catboost import CatBoostRegressor, Pool
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
+from scipy.stats import gaussian_kde
 
 # Se construye una función que aborde la conversión de int en str para un procesamiento óptimizado
 def int_to_str(value):
@@ -73,7 +73,30 @@ model_becario.pais_subvencion.value_counts(normalize=False)
 model_becario.columns
 model_becario = model_becario[["target_brecha", "area", "pais_subvencion"]]
 
+# Antes de implementar el modelo de machine learning se realiza un análisis de las variables consideradas
+# Se realiza un histograma de frecuencias de la variable brecha
+
+data = model_becario["target_brecha"].dropna()
+
+# Histograma (normalizado)
+plt.hist(data, bins=20, density=True, alpha=0.6)
+
+# KDE
+kde = gaussian_kde(data)
+
+x_vals = np.linspace(data.min(), data.max(), 1000)
+plt.plot(x_vals, kde(x_vals))
+
+# Etiquetas
+plt.xlabel("Brecha de productividad científica")
+plt.ylabel("Densidad")
+
+# Mostrar
+plt.show()
+
+###############################################################################
 # Ahora bien, se procede a implementar el modelo de machine learning
+###############################################################################
 
 # Se configuran las variables
 target = "target_brecha"
@@ -108,13 +131,15 @@ for rep, seed in enumerate(seeds, start=1):
         test_pool  = Pool(X_te, y_te, cat_features=cat_cols)
 
 # Se implementa el modelo, estableciendo sus hiperparámetros en función del número de observaciones y
-# el número y natualeza de las variables o predictoras    
+# el número y natualeza de las variables o predictoras   
+
+# Los valores de los hiperparámetros me permite la estabilidad de mi modelo de machine learning 
 
         model = CatBoostRegressor(
             loss_function="RMSE",  # Representa la función de pérdida que se busca minimizar
             iterations=3000,       # Representa el número de iteraciones o árboles de decisión
             learning_rate=0.03,    # Es la métrica de referencia de la magnitud o peso de las correciones o iteraciones
-            depth=6,
+            depth=6, # Controla el nivel de interacción y especificidad que el modelo puede aprender en una interacción
             l2_leaf_reg=5.0,
             random_seed=seed,
             eval_metric="RMSE",
