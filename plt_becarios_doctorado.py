@@ -19,6 +19,7 @@ Created on Fri Jan 16 15:51:37 2026
 # Se importan las librerías que serán usadas
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 from catboost import CatBoostRegressor, Pool
 from sklearn.model_selection import KFold
@@ -93,6 +94,81 @@ plt.ylabel("Densidad")
 
 # Mostrar
 plt.show()
+
+# Se analiza la distribución de las variables categóricas que servirán como predictoras
+# Se analiza la variable área de conocimiento
+model_becario.area.value_counts()
+df_area = model_becario.area.value_counts()
+df_area = df_area.to_frame()
+df_area.reset_index(inplace=True)
+df_area.rename(columns=({"area":"Área", "count":"Número_becarios"}), inplace=True)
+
+# Configurar el tamaño de la figura
+plt.figure(figsize=(14, 8))
+
+# Crear una paleta de colores en tonos de azul inverso
+palette = sns.color_palette("viridis", len(df_area["Número_becarios"]))
+
+# Crear las barras del gráfico
+bars = plt.bar(df_area["Área"], df_area["Número_becarios"], color=palette)
+
+# Etiquetas de los ejes
+plt.xlabel("Área", fontsize=18)
+plt.ylabel("Número de becarios", fontsize=14)
+
+# Agregar etiquetas de valores a cada barra con mayor tamaño de fuente
+for bar in bars:
+    plt.annotate(f'{bar.get_height():.0f}', 
+                 xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()), 
+                 xytext=(0, 5),  # Desplazamiento de la etiqueta
+                 textcoords="offset points",
+                 ha='center', va='bottom',
+                 fontsize=18)
+
+# Ajustar los márgenes para que las etiquetas no se corten
+plt.xticks(rotation=45, fontsize=14)  # Rotar etiquetas del eje X si es necesario
+plt.yticks(fontsize=14)
+plt.tight_layout()
+
+# Mostrar el gráfico
+plt.show()
+
+# Ahora, se analiza la variable país en donde realizó sus estudio
+model_becario.pais_subvencion.value_counts()
+df_pais = model_becario.pais_subvencion.value_counts()
+df_pais = df_pais.to_frame()
+df_pais.reset_index(inplace=True)
+df_pais.rename(columns=({"count":"Número_becarios"}), inplace=True)
+# Se considera el top 5 de paises
+df_pais = df_pais[df_pais["Número_becarios"]>=9]
+
+# Configurar el tamaño de la figura
+plt.figure(figsize=(14, 8))
+
+# Crear una paleta de colores en tonos de azul inverso
+palette = sns.color_palette("magma", len(df_pais["Número_becarios"]))
+
+# Crear las barras del gráfico
+bars = plt.bar(df_pais["pais_subvencion"], df_pais["Número_becarios"], color=palette)
+
+# Etiquetas de los ejes
+plt.xlabel("País", fontsize=18)
+plt.ylabel("Número de becarios", fontsize=14)
+
+# Agregar etiquetas de valores a cada barra con mayor tamaño de fuente
+for bar in bars:
+    plt.annotate(f'{bar.get_height():.0f}', 
+                 xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()), 
+                 xytext=(0, 5),  # Desplazamiento de la etiqueta
+                 textcoords="offset points",
+                 ha='center', va='bottom',
+                 fontsize=18)
+
+# Ajustar los márgenes para que las etiquetas no se corten
+plt.xticks(rotation=45, fontsize=14)  # Rotar etiquetas del eje X si es necesario
+plt.yticks(fontsize=14)
+plt.tight_layout()
+
 
 ###############################################################################
 # Ahora bien, se procede a implementar el modelo de machine learning
@@ -252,10 +328,188 @@ oof_by_area = (
 
 print(oof_by_area)
 
+###############################################################################
+# ESTRATEGIA COMPARTIDA POR CLAUDE DE ANTROPHIC - Esquema híbrido
+###############################################################################
 
 
+import numpy as np
+import pandas as pd
 
+from catboost import CatBoostRegressor, Pool
+from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+# =========================
+# 1) Configuración de datos
+# =========================
+target = "target_brecha"
+cat_cols = ["area", "pais_subvencion"]
+
+X = model_becario.drop(columns=[target]).copy()
+y = model_becario[target].copy()
+
+for c in cat_cols:
+    X[c] = X[c].astype(str)
+
+# (Opcional, recomendado en n=100): estratos para balancear categorías
+# Si tienes muchas categorías raras, ayuda a que cada fold “se parezca” al total.
+#strata = (X["area"] + " | " + X["pais_subvencion"]).values
+
+# =========================
+# 2) Repeated K-Fold (n=100)
+# =========================
+k = 5
+
+# Para n=100, 5 repeticiones suele ser un buen equilibrio (25 modelos)
+# Si quieres máxima robustez, vuelve a 10.
+n_repeats = 5
+seeds = [42 + i for i in range(n_repeats)]
+
+# Guardamos métricas por fold y OOF por repetición
+all_rows = []
+oof_preds_by_rep = np.zeros((n_repeats, len(X)), dtype=float)
+
+for rep_idx, seed in enumerate(seeds):
+    # Opción A: KFold clásico
+    splitter = KFold(n_splits=k, shuffle=True, random_state=seed)
+
+    # Opción B (recomendada en n=100 con categóricas): “stratified” por combinación área-país
+    #splitter = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
+
+    # Recorremos folds
+    for fold, (train_idx, test_idx) in enumerate(kf.split(X), start=1):
+        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
+        y_tr, y_te = y.iloc[train_idx], y.iloc[test_idx]
+
+        train_pool = Pool(X_tr, y_tr, cat_features=cat_cols)
+        test_pool  = Pool(X_te, y_te, cat_features=cat_cols)
+
+        # =========================
+        # Modelo (ajustado a n=100)
+        # =========================
+        model = CatBoostRegressor(
+            loss_function="RMSE",
+            eval_metric="RMSE",
+
+            # En n pequeño, no necesitas un techo gigante
+            # Deja que early stopping determine cuántos árboles usar.
+            iterations=1500,
+            learning_rate=0.03,
+            depth=6,
+            l2_leaf_reg=5.0,
+
+            random_seed=seed,
+            verbose=False,
+
+            bootstrap_type="Bayesian",
+            bagging_temperature=1.0,
+
+            # Early stopping por fold
+            od_type="Iter",
+            od_wait=150
+        )
+
+        model.fit(train_pool, eval_set=test_pool, use_best_model=True)
+
+        preds = model.predict(test_pool)
+
+        # Guardamos OOF de ESTA repetición (cada obs se predice 1 vez por repetición)
+        oof_preds_by_rep[rep_idx, test_idx] = preds
+
+        # Métricas por fold (fuera de entrenamiento)
+        mae  = mean_absolute_error(y_te, preds)
+        rmse = mean_squared_error(y_te, preds, squared=False)
+        r2   = r2_score(y_te, preds)
+
+        all_rows.append({
+            "repeat": rep_idx + 1,
+            "seed": seed,
+            "fold": fold,
+            "MAE": mae,
+            "RMSE": rmse,
+            "R2": r2,
+            "best_iter": model.get_best_iteration()
+        })
+
+metrics_df = pd.DataFrame(all_rows)
+
+print("\nResumen global (todos los folds y repeticiones):")
+print(metrics_df[["MAE", "RMSE", "R2", "best_iter"]].agg(["mean", "std", "min", "max"]))
+
+# =========================
+# 3) OOF Global (promedio)
+# =========================
+oof_pred = oof_preds_by_rep.mean(axis=0)
+
+oof_mae  = mean_absolute_error(y, oof_pred)
+oof_rmse = mean_squared_error(y, oof_pred, squared=False)
+oof_r2   = r2_score(y, oof_pred)
+
+print("\nOOF Global (promedio sobre repeticiones):")
+print(f"OOF MAE : {oof_mae:.4f}")
+print(f"OOF RMSE: {oof_rmse:.4f}")
+print(f"OOF R^2 : {oof_r2:.4f}")
+
+metrics_df.to_csv("catboost_repeated_kfold_bayesian_metrics_n100.csv", index=False)
+
+# =========================================================
+# 4) Modelo final (100% datos) - síntesis interpretativa
+# =========================================================
+full_pool = Pool(X, y, cat_features=cat_cols)
+
+# Heurística más robusta para n pequeño: mediana en vez de media (menos sensible a extremos)
+final_iters = int(metrics_df["best_iter"].median())
+final_iters = max(final_iters, 50)  # evita casos raros donde best_iter salga 0 o muy bajo
+
+final_model = CatBoostRegressor(
+    loss_function="RMSE",
+    eval_metric="RMSE",
+    iterations=final_iters,
+    learning_rate=0.03,
+    depth=6,
+    l2_leaf_reg=5.0,
+    random_seed=42,
+    verbose=200,
+    bootstrap_type="Bayesian",
+    bagging_temperature=1.0
+)
+
+final_model.fit(full_pool)
+final_model.save_model("catboost_brecha_final_bayesian_n100.cbm")
+
+# Importancia de variables
+fi = final_model.get_feature_importance(full_pool)
+imp = (pd.DataFrame({"feature": X.columns, "importance": fi})
+         .sort_values("importance", ascending=False))
+
+print("\nImportancia (modelo final):")
+print(imp)
+
+# =========================================================
+# 5) Regularidades empíricas (OOF) por país y por área
+# =========================================================
+df_oof = X.copy()
+df_oof["target_real"] = y
+df_oof["oof_pred"] = oof_pred
+
+oof_by_country = (
+    df_oof.groupby("pais_subvencion")["oof_pred"]
+          .agg(["mean", "count"])
+          .sort_values("mean", ascending=False)
+)
+
+oof_by_area = (
+    df_oof.groupby("area")["oof_pred"]
+          .agg(["mean", "count"])
+          .sort_values("mean", ascending=False)
+)
+
+print("\nOOF promedio por país:")
+print(oof_by_country)
+
+print("\nOOF promedio por área:")
+print(oof_by_area)
 
 
 
