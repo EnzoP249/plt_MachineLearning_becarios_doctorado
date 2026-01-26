@@ -389,14 +389,14 @@ for rep_idx, seed in enumerate(seeds):
         # Modelo (ajustado a n=100)
         # =========================
         model = CatBoostRegressor(
-            loss_function="RMSE",
+            loss_function="RMSE", # Representa la función de pérdida que se busca minimizar
             eval_metric="RMSE",
 
             # En n pequeño, no necesitas un techo gigante
             # Deja que early stopping determine cuántos árboles usar.
-            iterations=1500,
-            learning_rate=0.03,
-            depth=6,
+            iterations=1500,  # Representa el número de iteraciones o árboles de decisión
+            learning_rate=0.03, # Es la métrica de referencia de la magnitud o peso de las correciones o iteraciones
+            depth=6, # Controla el nivel de interacción y especificidad que el modelo puede aprender en una interacción
             l2_leaf_reg=5.0,
 
             random_seed=seed,
@@ -512,13 +512,41 @@ print("\nOOF promedio por área:")
 print(oof_by_area)
 
 
+tabla_interaccion = (
+    df_oof
+    .groupby(["pais_subvencion", "area"])
+    .agg(
+        mean_oof=("oof_pred", "mean"),
+        count=("oof_pred", "size")
+    )
+    .reset_index()
+    .sort_values("mean_oof", ascending=False)
+)
+
+tabla_interaccion
+
+tabla_interaccion_filtrada = tabla_interaccion[
+    tabla_interaccion["count"] >= 3]
 
 
+heatmap_data = tabla_interaccion_filtrada.pivot(
+    index="area",
+    columns="pais_subvencion",
+    values="mean_oof"
+)
 
-
-
-
-
+plt.figure(figsize=(10, 5))
+sns.heatmap(
+    heatmap_data,
+    annot=True,
+    fmt=".2f",
+    cmap="inferno"
+)
+#plt.title("Promedio OOF por país y área")
+plt.xlabel("País de la beca")
+plt.ylabel("Área de conocimiento")
+plt.tight_layout()
+plt.show()
 
 
 
