@@ -177,10 +177,6 @@ plt.tight_layout()
 # Ahora bien, se procede a implementar el modelo de machine learning
 ###############################################################################
 
-###############################################################################
-# ESTRATEGIA COMPARTIDA POR CLAUDE DE ANTROPHIC - Esquema híbrido
-###############################################################################
-
 # =========================================================
 # 0) Semillas globales (Python / NumPy / hash)
 # =========================================================
@@ -212,7 +208,7 @@ for c in cat_cols:
 
 # Se define el diseño experimental
 k = 5
-n_repeats = 5
+n_repeats = 10
 
 # Semillas fijas por repetición → mismas particiones en cada corrida
 seeds = [GLOBAL_SEED + i for i in range(n_repeats)]
@@ -235,13 +231,13 @@ for rep_idx, seed in enumerate(seeds): # bucle asociado con las repeticiones
         # =========================
         # Modelo (determinista en CPU)
         # =========================
-        model = CatBoostRegressor( # En total, y siguiendo la lógica de mi ejercicio, se construiran 25 modelos de CatBoost
+        model = CatBoostRegressor( # En total, y siguiendo la lógica de mi ejercicio, se construiran 50 modelos de CatBoost
             loss_function="RMSE", 
             eval_metric="RMSE", 
             
             # Se establece la capacidad del modelo
 
-            iterations=1500, # Número de árboles
+            iterations=3000, # Número de árboles
             learning_rate=0.03,
             depth=6,
             l2_leaf_reg=5.0,
