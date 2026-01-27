@@ -12,8 +12,8 @@ Created on Fri Jan 16 15:51:37 2026
 
 ###############################################################################
 # OBJETIVO DEL PROYECTO: DISEÑAR E IMPLEMENTAR UN ALGORITMO DE MACHINE LEARNING
-# PARA CREAR UN MODELO PREDICTIVO DE LA BRECHA DE PRODUCTIVIDAD CIENTÍFICA DE
-# BECARIOS DE PROGRAMAS DE DOCTORADO
+# PARA LA ESTIMACIÓN DE REGULARIDADES EMPIRICAS EN LA BRECHA DE PRODUCTIVIDAD
+# CIENTÍFICA DE BECARIOS DE PROGRAMAS DE DOCTORADO
 ###############################################################################
 
 # Se importan las librerías que serán usadas
@@ -189,7 +189,6 @@ os.environ["PYTHONHASHSEED"] = str(GLOBAL_SEED)
 random.seed(GLOBAL_SEED)
 np.random.seed(GLOBAL_SEED)
 
-
 # =========================
 # 1) Configuración de datos
 # =========================
@@ -203,14 +202,15 @@ y = model_becario[target].copy()
 X = X.reset_index(drop=True)
 y = y.reset_index(drop=True)
 
-# CatBoost requiere categóricas como str (ok)
+# CatBoost requiere categóricas como str
 for c in cat_cols:
     X[c] = X[c].astype(str)
-
 
 # =========================
 # 2) Repeated K-Fold (n=100)
 # =========================
+
+# Se define el diseño experimental
 k = 5
 n_repeats = 5
 
@@ -219,13 +219,13 @@ seeds = [GLOBAL_SEED + i for i in range(n_repeats)]
 
 # Guardamos métricas por fold y OOF por repetición
 all_rows = []
-oof_preds_by_rep = np.zeros((n_repeats, len(X)), dtype=float)
+oof_preds_by_rep = np.zeros((n_repeats, len(X)), dtype=float) # Se incializa una estructura
 
-for rep_idx, seed in enumerate(seeds):
-    splitter = KFold(n_splits=k, shuffle=True, random_state=seed)
+for rep_idx, seed in enumerate(seeds): # bucle asociado con las repeticiones
+    splitter = KFold(n_splits=k, shuffle=True, random_state=seed) # Se genera la partición del dataset
 
     # Recorremos folds
-    for fold, (train_idx, test_idx) in enumerate(splitter.split(X), start=1):
+    for fold, (train_idx, test_idx) in enumerate(splitter.split(X), start=1):  # bucle asociado con cada fold o pliegue
         X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
         y_tr, y_te = y.iloc[train_idx], y.iloc[test_idx]
 
@@ -235,11 +235,13 @@ for rep_idx, seed in enumerate(seeds):
         # =========================
         # Modelo (determinista en CPU)
         # =========================
-        model = CatBoostRegressor(
-            loss_function="RMSE",
-            eval_metric="RMSE",
+        model = CatBoostRegressor( # En total, y siguiendo la lógica de mi ejercicio, se construiran 25 modelos de CatBoost
+            loss_function="RMSE", 
+            eval_metric="RMSE", 
+            
+            # Se establece la capacidad del modelo
 
-            iterations=1500,
+            iterations=1500, # Número de árboles
             learning_rate=0.03,
             depth=6,
             l2_leaf_reg=5.0,
