@@ -58,12 +58,18 @@ model_becario = becario.dropna(subset=["codigo_scopus"])
 
 # Se construye la variable target
 model_becario["y_pre"] = model_becario["pub_antes_beca_4"] / 4
-model_becario["y_fund"] = (
-    model_becario["pub_durante_beca"] + model_becario["pub_dur_rezago"] / (model_becario["periodo_beca"] + model_becario["periodo_rezago"])
-    ) 
 
+model_becario["y_fund"] = (
+    (model_becario["pub_durante_beca"] + model_becario["pub_dur_rezago"]) /
+    (model_becario["periodo_beca"] + model_becario["periodo_rezago"])
+)
 
 model_becario["target_brecha"] = model_becario["y_fund"] - model_becario["y_pre"]
+
+# Se obtiene un análisis desciptivo de mi variable target_brecha
+model_becario["target_brecha"].describe()
+
+
 
 # Analizo la distribución de la variable area
 model_becario.area.value_counts(normalize=True).round(4)*100
@@ -416,7 +422,15 @@ plt.tight_layout()
 plt.show()
 
 
+# Se analiza si los valores que integran esta combinación representan una regularidad específica o un par de valores
+# generar el incremento
 
+subset = model_becario[
+    (model_becario["pais_subvencion"] == "BRASIL") &
+    (model_becario["area"] == "INGENIERÍA Y TECNOLOGÍA    ")
+]
+
+subset["target_brecha"].describe()
 
 
 
